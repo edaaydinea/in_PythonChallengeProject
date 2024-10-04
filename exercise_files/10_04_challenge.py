@@ -1,17 +1,21 @@
 import os
 import time
 from termcolor import colored, COLORS
-import math 
+import math
 import random
 from threading import Thread
 from inspect import getmembers, ismethod
+import json
+
 
 class TerminalScribeException(Exception):
     def __init__(self, message=''):
         super().__init__(colored(message, 'red'))
 
+
 class InvalidParameter(TerminalScribeException):
     pass
+
 
 def is_number(val):
     try:
@@ -19,6 +23,7 @@ def is_number(val):
         return True
     except ValueError:
         return False
+
 
 class Canvas:
     def __init__(self, width, height, scribes=[], framerate=.05):
@@ -45,9 +50,22 @@ class Canvas:
         }
 
     def fromDict(data):
-        canvas = globals()[data.get('classname')](data.get('x'), data.get('y'), scribes=[globals()[scribe.get('classname')].fromDict(scribe) for scribe in data.get('scribes')])
+        canvas = globals()[data.get('classname')](data.get('x'), data.get('y'),
+                                                  scribes=[globals()[scribe.get('classname')].fromDict(scribe) for
+                                                           scribe in data.get('scribes')])
         canvas._canvas = data.get('canvas')
         return canvas
+
+    def toFile(self, name):
+        with open(name + '.json', 'w') as f:
+            f.write(json.dumps(self.toDict()))
+
+    def fromFile(name):
+        with open(name + '.json', 'r') as f:
+            try:
+                return Canvas.fromDict(json.loads(f.readline()))
+            except:
+                raise TerminalScribeException('File {}.json is not a valid Scribe file'.format(name))
 
     def hitsVerticalWall(self, point):
         return round(point[0]) < 0 or round(point[0]) >= self._x
@@ -76,7 +94,7 @@ class Canvas:
             for scribe in self.scribes:
                 threads = []
                 if len(scribe.moves) > i:
-                    args = scribe.moves[i][1]+[self]
+                    args = scribe.moves[i][1] + [self]
                     threads.append(Thread(target=scribe.moves[i][0], args=args))
                 [thread.start() for thread in threads]
                 [thread.join() for thread in threads]
@@ -88,13 +106,14 @@ class Canvas:
         for y in range(self._y):
             print(' '.join([col[y] for col in self._canvas]))
 
+
 class CanvasAxis(Canvas):
     # Pads 1-digit numbers with an extra space
     def formatAxisNumber(self, num):
         if num % 5 != 0:
             return '  '
         if num < 10:
-            return ' '+str(num)
+            return ' ' + str(num)
         return str(num)
 
     def print(self):
@@ -104,13 +123,14 @@ class CanvasAxis(Canvas):
 
         print(' '.join([self.formatAxisNumber(x) for x in range(self._x)]))
 
+
 class TerminalScribe:
     def __init__(self, color='red', mark='*', trail='.', pos=(0, 0), degrees=135):
         self.moves = []
 
         if color not in COLORS:
             raise InvalidParameter(f'color {self.color} not a valid color ({", ".join(list(COLORS.keys()))})')
-        self.color=color
+        self.color = color
 
         if len(str(mark)) != 1:
             raise InvalidParameter('Mark must be a single character')
@@ -119,11 +139,11 @@ class TerminalScribe:
         if len(str(trail)) != 1:
             raise InvalidParameter('Trail must be a single character')
         self.trail = str(trail)
-        
-        if len(pos) != 2 or not is_number(pos[0])or not is_number(pos[1]):
+
+        if len(pos) != 2 or not is_number(pos[0]) or not is_number(pos[1]):
             raise InvalidParameter('Position must be two numeric values (x, y)')
         self.pos = pos
-        
+
         if not is_number(degrees):
             raise InvalidParameter('Degrees must be a valid number')
         self.setDegrees(degrees)
@@ -144,7 +164,7 @@ class TerminalScribe:
             mark=data.get('mark'),
             trail=data.get('trail'),
             pos=data.get('pos'),
-            )
+        )
         scribe.moves = scribe._movesFromDict(data.get('moves'))
         return scribe
 
@@ -165,12 +185,12 @@ class TerminalScribe:
         self.moves.append((self._setDirection, [direction]))
 
     def degreesToUnitDirection(self, degrees):
-        radians = (degrees/180) * math.pi 
+        radians = (degrees / 180) * math.pi
         return [math.sin(radians), -math.cos(radians)]
 
     def _setDegrees(self, degrees, _):
         self.direction = self.degreesToUnitDirection(degrees)
-    
+
     def setDegrees(self, degrees):
         self.moves.append((self._setDegrees, [degrees]))
 
@@ -194,6 +214,7 @@ class TerminalScribe:
         self.pos = pos
         canvas.setPos(self.pos, colored(self.mark, self.color))
 
+
 class PlotScribe(TerminalScribe):
 
     def __init__(self, domain, **kwargs):
@@ -203,7 +224,7 @@ class PlotScribe(TerminalScribe):
 
     def toDict(self):
         data = super().toDict()
-        data['x'] = self.x 
+        data['x'] = self.x
         data['domain'] = self.domain
         return data
 
@@ -229,6 +250,7 @@ class PlotScribe(TerminalScribe):
         for x in range(self.domain[0], self.domain[1]):
             self.moves.append((self._plotX, [function]))
 
+
 class RobotScribe(TerminalScribe):
     def up(self, distance=1):
         self.setDirection([0, -1])
@@ -252,19 +274,20 @@ class RobotScribe(TerminalScribe):
         self.left(size)
         self.up(size)
 
+
 class RandomWalkScribe(TerminalScribe):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.degrees = kwargs.get('degrees', 135)
-    
+
     def _randomizeDegrees(self, _):
-        self.degrees = random.randint(self.degrees-10, self.degrees+10)
+        self.degrees = random.randint(self.degrees - 10, self.degrees + 10)
         self.direction = self.degreesToUnitDirection(self.degrees)
         print(f'Degrees is {self.degrees}')
 
     def randomizeDegrees(self):
         self.moves.append((self._randomizeDegrees, []))
-    
+
     def bounce(self, pos, canvas):
         reflection = canvas.getReflection(pos)
         if reflection[0] == -1:
@@ -278,28 +301,37 @@ class RandomWalkScribe(TerminalScribe):
             self.randomizeDegrees()
             super().forward()
 
+
 def sine(x):
-    return 5*math.sin(x/4) + 15
+    return 5 * math.sin(x / 4) + 15
+
 
 def cosine(x):
-    return 5*math.cos(x/4) + 15
+    return 5 * math.cos(x / 4) + 15
+
 
 def circleTop(x):
     radius = 10
     center = 20
     if x > center - radius and x < center + radius:
-        return center-math.sqrt(radius**2 - (x-center)**2)
+        return center - math.sqrt(radius ** 2 - (x - center) ** 2)
+
 
 def circleBottom(x):
     radius = 10
     center = 20
     if x > center - radius and x < center + radius:
-        return center+math.sqrt(radius**2 - (x-center)**2)
+        return center + math.sqrt(radius ** 2 - (x - center) ** 2)
+
 
 scribe = TerminalScribe(color='green')
 scribe.forward(10)
 robotScribe = RobotScribe(color='yellow')
 robotScribe.drawSquare(20)
 
-canvas = CanvasAxis(40, 40, scribes=[scribe, robotScribe])
+canvas = CanvasAxis(30, 30, scribes=[scribe, robotScribe])
 
+canvas.toFile('solution_file')
+
+newCanvas = Canvas.fromFile('solution_file')
+newCanvas.go()
